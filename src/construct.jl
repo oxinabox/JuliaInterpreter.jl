@@ -26,18 +26,25 @@ rather than recursed into via the interpreter.
 """
 const compiled_modules = Set{Module}()
 
-const junk = FrameData[] # to allow re-use of allocated memory (this is otherwise a bottleneck)
-const debug_recycle = Base.RefValue(false)
-@noinline _check_frame_not_in_junk(frame) = @assert frame.framedata ∉ junk
+const junk_framedata = FrameData[] # to allow re-use of allocated memory (this is otherwise a bottleneck)
+const junk_frames = Frame[]
+debug_recycle() = false
+@noinline function _check_frame_not_in_junk(frame)
+    @assert frame.framedata ∉ junk_framedata
+    @assert frame ∉ junk_frames
+end
+
 @inline function recycle(frame)
-    debug_recycle[] && _check_frame_not_in_junk(frame)
-    push!(junk, frame.framedata)
+    debug_recycle() && _check_frame_not_in_junk(frame)
+    push!(junk_framedata, frame.framedata)
+    push!(junk_frames, frame)
 end
 
 function clear_caches()
-    empty!(junk)
+    empty!(junk_framedata)
     empty!(framedict)
     empty!(genframedict)
+    empty!(junk_frames)
     for bp in breakpoints()
         empty!(bp.instances)
     end
@@ -102,7 +109,7 @@ keyword-sorter function for `fcall`.
 
 # Example
 
-```jldoctest; setup=(using JuliaInterpreter; empty!(JuliaInterpreter.junk))
+```jldoctest; setup=(using JuliaInterpreter; JuliaInterpreter.clear_caches())
 julia> mymethod(x) = 1
 mymethod (generic function with 1 method)
 
@@ -206,7 +213,7 @@ this will be the types of `allargs`);
 
 # Example
 
-```jldoctest; setup=(using JuliaInterpreter; empty!(JuliaInterpreter.junk))
+```jldoctest; setup=(using JuliaInterpreter; JuliaInterpreter.clear_caches())
 julia> mymethod(x::Vector{T}) where T = 1
 mymethod (generic function with 1 method)
 
@@ -262,8 +269,8 @@ function prepare_framedata(framecode, argvals::Vector{Any}, caller_will_catch_er
     slotnames = src.slotnames::SlotNamesType
     ssavt = src.ssavaluetypes
     ng, ns = isa(ssavt, Int) ? ssavt : length(ssavt::Vector{Any}), length(src.slotflags)
-    if length(junk) > 0
-        olddata = pop!(junk)
+    if length(junk_framedata) > 0
+        olddata = pop!(junk_framedata)
         locals, ssavalues, sparams = olddata.locals, olddata.ssavalues, olddata.sparams
         exception_frames, last_reference = olddata.exception_frames, olddata.last_reference
         last_exception = olddata.last_exception
@@ -506,7 +513,7 @@ would be created by the generator.
 
 # Example
 
-```jldoctest; setup=(using JuliaInterpreter; empty!(JuliaInterpreter.junk))
+```jldoctest; setup=(using JuliaInterpreter; JuliaInterpreter.clear_caches())
 julia> mymethod(x) = x+1
 mymethod (generic function with 1 method)
 
@@ -549,7 +556,7 @@ Build a `Frame` ready to execute `f` with the specified positional and keyword a
 
 # Example
 
-```jldoctest; setup=(using JuliaInterpreter; empty!(JuliaInterpreter.junk))
+```jldoctest; setup=(using JuliaInterpreter; JuliaInterpreter.clear_caches())
 julia> mymethod(x) = x+1
 mymethod (generic function with 1 method)
 
@@ -647,7 +654,7 @@ Evaluate `f` on the specified arguments using the interpreter.
 
 # Example
 
-```jldoctest; setup=(using JuliaInterpreter; empty!(JuliaInterpreter.junk))
+```jldoctest; setup=(using JuliaInterpreter; JuliaInterpreter.clear_caches())
 julia> a = [1, 7]
 2-element Array{Int64,1}:
  1
